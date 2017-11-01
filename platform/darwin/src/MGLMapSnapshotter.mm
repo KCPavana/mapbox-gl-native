@@ -14,12 +14,15 @@
 #import "MGLGeometry_Private.h"
 #import "NSBundle+MGLAdditions.h"
 #import "MGLStyle.h"
+#import "MGLAttributionInfo_Private.h"
 
 #if TARGET_OS_IPHONE
 #import "UIImage+MGLAdditions.h"
 #else
 #import "NSImage+MGLAdditions.h"
 #endif
+
+#import <QuartzCore/QuartzCore.h>
 
 const CGPoint MGLLogoImagePosition = CGPointMake(8, 8);
 const CGFloat MGLSnapshotterMinimumPixelSize = 64;
@@ -146,6 +149,25 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
     dispatch_async(queue, ^{
         _snapshotCallback = std::make_unique<mbgl::Actor<mbgl::MapSnapshotter::Callback>>(*mbgl::Scheduler::GetCurrent(), [=](std::exception_ptr mbglError, mbgl::PremultipliedImage image, mbgl::MapSnapshotter::Attributions attributions, mbgl::MapSnapshotter::PointForFn pointForFn) {
             _loading = false;
+            
+            NSMutableArray *infos = [NSMutableArray array];
+            
+            
+#if TARGET_OS_IPHONE
+            CGFloat fontSize = [UIFont buttonFontSize];
+            UIColor *attributeFontColor = [UIColor blackColor];
+#else
+            CGFloat fontSize = [NSFont systemFontSizeForControlSize:NSMiniControlSize];
+            NSColor *attributeFontColor = [NSColor blackColor];
+#endif
+            for (auto attribution = attributions.begin(); attribution != attributions.end(); ++attribution) {
+                NSString *attributionHTMLString = @(attribution->c_str());
+                NSArray *tileSetInfos = [MGLAttributionInfo attributionInfosFromHTMLString:attributionHTMLString
+                                                                                  fontSize:fontSize
+                                                                                 linkColor:attributeFontColor];
+                [infos growArrayByAddingAttributionInfosFromArray:tileSetInfos];
+            }
+            
             if (mbglError) {
                 NSString *description = @(mbgl::util::toString(mbglError).c_str());
                 NSDictionary *userInfo = @{NSLocalizedDescriptionKey: description};
@@ -173,7 +195,21 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
                     UIGraphicsBeginImageContextWithOptions(mglImage.size, NO, self.options.scale);
                     
                     [mglImage drawInRect:CGRectMake(0, 0, mglImage.size.width, mglImage.size.height)];
-                    [logoImage drawInRect:CGRectMake(MGLLogoImagePosition.x, mglImage.size.height - (MGLLogoImagePosition.y + logoImage.size.height), logoImage.size.width,logoImage.size.height)];
+                    CGRect logoImageRect = CGRectMake(MGLLogoImagePosition.x, mglImage.size.height - (MGLLogoImagePosition.y + logoImage.size.height), logoImage.size.width,logoImage.size.height);
+                    [logoImage drawInRect:logoImageRect];
+                    
+                    int x = logoImage.size.width + 20;
+                    int y = logoImageRect.origin.y;
+                    
+                    for (MGLAttributionInfo *info in infos) {
+                        if (info.isFeedbackLink) {
+                            continue;
+                        }
+                        [info.title drawAtPoint:CGPointMake(x, y)];
+                        
+                        x+= [info.title size].width + 10;
+                    }
+                    
                     UIImage *compositedImage = UIGraphicsGetImageFromCurrentImageContext();
                     
                     UIGraphicsEndImageContext();
@@ -191,7 +227,20 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
                     
                     [compositedImage lockFocus];
                     [sourceImageRep drawInRect: targetFrame];
-                    [logoImage drawInRect:CGRectMake(MGLLogoImagePosition.x, MGLLogoImagePosition.y, logoImage.size.width,logoImage.size.height)];
+                    [logoImage drawInRect:CGRectMake(MGLLogoImagePosition.x, MGLLogoImagePosition.y, logoImage.size.width, logoImage.size.height)];
+                    
+                    int x = logoImage.size.width + 20;
+                    int y = MGLLogoImagePosition.y;
+                    
+                    for (MGLAttributionInfo *info in infos) {
+                        if (info.isFeedbackLink) {
+                            continue;
+                        }
+                        [info.title drawAtPoint:NSMakePoint(x, y)];
+                        
+                        x+= [info.title size].width + 10;
+                    }
+                    
                     [compositedImage unlockFocus];
                     
 #endif
